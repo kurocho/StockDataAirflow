@@ -1,7 +1,7 @@
-from airflow.decorators import dag, task
+from airflow.decorators import dag, task, task_group
 from datetime import datetime
 from airflow.operators.python import PythonOperator, PythonVirtualenvOperator
-from airflow.exceptions import AirflowException
+from airflow.exceptions import AirflowSkipException
 
 default_args = {'start_date': datetime(2022, 1, 1)}
 BATCH_SIZE = 10
@@ -14,12 +14,8 @@ BATCH_SIZE = 10
     tags=['stock'],
 )
 def taskflow():
-    @task.virtualenv(
-        use_dill=True,
-        system_site_packages=False,
-        requirements=['beautifulsoup4', 'requests'],
-    )
 
+    @task
     def get_tickers():
         import requests
         import re
@@ -40,12 +36,8 @@ def taskflow():
     
     
 
-    @task.virtualenv(
-        use_dill=True,
-        system_site_packages=True,
-        requirements=['yfinance']
-    )
-    def get_stock_data(tickers: list, index, BATCH_SIZE):
+    @task
+    def get_stock_data(tickers: list, index):
         import yfinance as yf
         def get_financial_data(ticker):
             stock = yf.Ticker(ticker)
@@ -60,12 +52,27 @@ def taskflow():
                 skipped = False
 
         if skipped:
-            print("SKIPPED")
-        
+            raise AirflowSkipException
 
+    @task
+    def generate_report(list):
+        print("Report generation start")
+    
+    @task
+    def end(value):
+        print(f'this is the end: {value}')
+
+
+
+    # THIS IS DAG TASK ORDERING
     tickers_task = get_tickers()
+    stock_data_tasks = []
     for i in range(0,BATCH_SIZE):
-        stock_data_task = get_stock_data(tickers_task,i,BATCH_SIZE)
+        stock_data_tasks.append(get_stock_data(tickers_task,i))
+
+    return end(generate_report(stock_data_tasks))
+
+
 
 
 dag = taskflow()
