@@ -1,6 +1,6 @@
 from airflow.decorators import dag, task
 from datetime import datetime
-
+from airflow.operators.python import PythonOperator, PythonVirtualenvOperator
 
 state = 'wa'
 
@@ -41,75 +41,14 @@ def taskflow():
     def get_stock_data(tickers: list):
         print(tickers)
 
+        import yfinance as yf
+
         def get_financial_data(ticker):
-            import yfinance as yf
+            stock = yf.Ticker(ticker)
+            return stock
 
-            msft = yf.Ticker(ticker)
-
-            # get stock info
-            msft.info
-
-            # get historical market data
-            hist = msft.history(period="max")
-
-            # show actions (dividends, splits)
-            msft.actions
-
-            # show dividends
-            msft.dividends
-
-            # show splits
-            msft.splits
-
-            # show financials
-            msft.financials
-            msft.quarterly_financials
-
-            # show major holders
-            msft.major_holders
-
-            # show institutional holders
-            msft.institutional_holders
-
-            # show balance sheet
-            msft.balance_sheet
-            msft.quarterly_balance_sheet
-
-            # show cashflow
-            msft.cashflow
-            msft.quarterly_cashflow
-
-            # show earnings
-            msft.earnings
-            msft.quarterly_earnings
-
-            # show sustainability
-            msft.sustainability
-
-            # show analysts recommendations
-            msft.recommendations
-
-            # show next event (earnings, etc)
-            msft.calendar
-
-            # show ISIN code - *experimental*
-            # ISIN = International Securities Identification Number
-            msft.isin
-
-            # show options expirations
-            msft.options
-
-            # show news
-            msft.news
-
-            # get option chain for specific expiration
-            return msft.option_chain('2022-01-21')
         for ticker in tickers['tickers']:
             get_financial_data(ticker)
-
-
-    
-    
 
     tickers_task = get_tickers(state)
     stock_data_task = get_stock_data(tickers_task)
