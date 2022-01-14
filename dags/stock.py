@@ -1,10 +1,14 @@
 from airflow.decorators import dag, task, task_group
 from datetime import datetime
-from airflow.operators.python import PythonOperator, PythonVirtualenvOperator
+from airflow.operators.python import PythonOperator, PythonVirtualenvOperator, get_current_context
 from airflow.exceptions import AirflowSkipException
+from airflow.providers.discord.operators.discord_webhook import DiscordWebhookOperator
 
 default_args = {'start_date': datetime(2022, 1, 1)}
 BATCH_SIZE = 10
+dicord_conn_id = "DiscordConn"
+our_webhook_endpoint = ""
+
 @dag(
     'stock_data_dag',
     schedule_interval='0 0 * * 1-5',
@@ -125,13 +129,16 @@ def taskflow():
                         ln = 1, align = 'A')
                 pdf.set_font("Arial", size = 10)
                 sector = decoded_tickers[ticker][0]['sector']
-                employees = decoded_tickers[ticker][0]['fullTimeEmployees']
-                summary = decoded_tickers[ticker][0]['longBusinessSummary']
-                website = decoded_tickers[ticker][0]['website']
                 pdf.cell(150, 4, txt = f'Sector: {sector}',
                         ln = 0, align = 'A')
-                pdf.cell(150, 4, txt = f'Employees: {employees}',
+                if 'fullTimeEmployees' in decoded_tickers[ticker][0]:
+                    employees = decoded_tickers[ticker][0]['fullTimeEmployees']
+                    pdf.cell(150, 4, txt = f'Employees: {employees}',
                         ln = 1, align = 'B')
+
+                summary = decoded_tickers[ticker][0]['longBusinessSummary']
+                website = decoded_tickers[ticker][0]['website']
+
                 pdf.set_font("Arial", size = 8)
                 pdf.cell(150, 4, txt = f'Website: {website}',link=website,
                         ln = 1, align = 'A')
@@ -154,23 +161,35 @@ def taskflow():
                 pdf.image(f'tmp/price_{ticker}.png',w=100)
 
                 pdf.add_page()
-        pdf.output(f'reports/Report_{tomorrow_date}.pdf') 
- 
+        filename = f'reports/Report_{tomorrow_date}.pdf'
+        pdf.output(filename) 
+        return {'report_filename': filename}
+    
+    @task
+    def notify_discord(report_info):
+        import subprocess
+        filename = report_info['report_filename']
+        print(filename)
+        url = 'https://transfer.sh/stock_report'
+        output = subprocess.check_output(f'curl --upload-file {filename} {url}', shell=True)
+        output = str(output)[2:-1]
+        print(output)
+        message = f'Your daily report is available here: {output}'
+        webhook = DiscordWebhookOperator(task_id="webhook",http_conn_id=dicord_conn_id, webhook_endpoint=our_webhook_endpoint, message=message)
+        webhook.execute(context=get_current_context())
     
     @task
     def end(value):
-        print(f'this is the end: {value}')
+        print(f'This is the end: {value}')
 
-
-
-    # THIS IS DAG TASK ORDERING
     init_task = init()
     tickers_task = get_tickers()
     stock_data_tasks = []
     for i in range(0,BATCH_SIZE):
         stock_data_tasks.append(get_stock_data(tickers_task,i))
-
-    return end(generate_report(stock_data_tasks))
+         
+    report_info = generate_report(stock_data_tasks)
+    return end(notify_discord(report_info))
 
 
 dag = taskflow()
